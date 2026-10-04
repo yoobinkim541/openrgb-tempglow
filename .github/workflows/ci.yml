@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e '.[test]'
+      - run: pytest -v
+      - run: python -m compileall -q src
+
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y desktop-file-utils appstream
+      - run: desktop-file-validate src/openrgb_tempglow/data/*.desktop
+      - run: appstreamcli validate --no-net src/openrgb_tempglow/data/*.metainfo.xml
+      - run: bash -n install.sh
+      - run: pipx run build
+      - run: packaging/deb/build-deb.sh
+      - run: dpkg-deb -I dist/*.deb

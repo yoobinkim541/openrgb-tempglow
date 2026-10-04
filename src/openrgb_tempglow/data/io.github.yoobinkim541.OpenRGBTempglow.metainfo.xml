@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.yoobinkim541.OpenRGBTempglow</id>
+  <name>OpenRGB Tempglow</name>
+  <summary>Per-part RGB lighting with temperature alerts</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="io.github.yoobinkim541">
+    <name>Yoobin Kim</name>
+  </developer>
+  <description>
+    <p>
+      A simple lighting app built on OpenRGB. Group your PC's lighting into case, fans,
+      graphics card and RAM, give each part its own effect, and let the fans turn red
+      when the CPU or graphics card gets too hot.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.yoobinkim541.OpenRGBTempglow.desktop</launchable>
+  <url type="homepage">https://github.com/yoobinkim541/openrgb-tempglow</url>
+  <url type="bugtracker">https://github.com/yoobinkim541/openrgb-tempglow/issues</url>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-10-05"/>
+  </releases>
+</component>

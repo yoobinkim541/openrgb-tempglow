@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check tag matches version
+        run: |
+          v=$(python3 -c "import re;print(re.search(r'__version__ = \"(.+)\"', open('src/openrgb_tempglow/__init__.py').read())[1])")
+          test "v$v" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} != v$v"; exit 1; }
+      - run: pipx run build
+      - run: packaging/deb/build-deb.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes=$(awk '/^## /{n++} n==1' CHANGELOG.md | tail -n +2)
+          gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes "$notes"
+
+  # Enable by setting the repository variable PUBLISH_PYPI=true after configuring
+  # a trusted publisher for this repo/workflow on pypi.org.
+  pypi:
+    needs: build
+    if: vars.PUBLISH_PYPI == 'true'
+    runs-on: ubuntu-24.04
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - run: rm -f dist/*.deb
+      - uses: pypa/gh-action-pypi-publish@release/v1

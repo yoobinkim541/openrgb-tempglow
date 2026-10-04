@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=OpenRGB Tempglow
+Name[ko]=본체 조명 (OpenRGB Tempglow)
+GenericName=RGB Lighting
+GenericName[ko]=RGB 조명 설정
+Comment=Per-part RGB lighting with temperature alerts
+Comment[ko]=케이스·팬·그래픽카드·램 조명과 과열 경고
+Exec=tempglow
+Icon=io.github.yoobinkim541.OpenRGBTempglow
+Terminal=false
+Categories=Settings;HardwareSettings;GTK;
+Keywords=RGB;LED;OpenRGB;fan;lighting;temperature;조명;
+StartupNotify=true

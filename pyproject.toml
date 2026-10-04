@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openrgb-tempglow"
+dynamic = ["version"]
+description = "Per-part RGB lighting (case, fans, GPU, RAM) with temperature alerts, built on OpenRGB"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Yoobin Kim" }]
+requires-python = ">=3.10"
+dependencies = ["openrgb-python>=0.3.7"]
+keywords = ["openrgb", "rgb", "led", "lighting", "temperature", "gtk"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: X11 Applications :: GTK",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Hardware",
+]
+
+[project.optional-dependencies]
+# The GUI needs PyGObject with GTK 4 and libadwaita >= 1.5, which usually come from the distro.
+gui = ["PyGObject>=3.42"]
+test = ["pytest>=7"]
+
+[project.urls]
+Homepage = "https://github.com/yoobinkim541/openrgb-tempglow"
+Issues = "https://github.com/yoobinkim541/openrgb-tempglow/issues"
+
+[project.scripts]
+tempglowd = "openrgb_tempglow.daemon:main"
+tempglow-setup = "openrgb_tempglow.setup_user:main"
+
+[project.gui-scripts]
+tempglow = "openrgb_tempglow.gui:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "openrgb_tempglow.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+openrgb_tempglow = ["data/*", "data/icons/*.svg", "data/icons/*/*.png"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
