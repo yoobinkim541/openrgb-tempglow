@@ -4,6 +4,7 @@ import logging
 import os
 import shutil
 import subprocess
+import time
 
 log = logging.getLogger(__name__)
 FLATPAK_ID = "org.openrgb.OpenRGB"
@@ -45,6 +46,37 @@ def _supports(argv, env, flag):
         return False
 
 
+def _pending_i2c_buses():
+    """I2C buses udev will grant to the logged-in user (uaccess) but hasn't yet."""
+    pending = []
+    for dev in glob.glob("/dev/i2c-*"):
+        try:
+            st = os.stat(dev)
+            with open(f"/run/udev/data/c{os.major(st.st_rdev)}:{os.minor(st.st_rdev)}") as f:
+                if "G:uaccess" not in f.read().split("\n"):
+                    continue
+        except OSError:
+            continue
+        if not os.access(dev, os.R_OK | os.W_OK):
+            pending.append(dev)
+    return pending
+
+
+def wait_for_i2c_access(timeout=30.0, interval=0.5):
+    """At boot the user service can start before logind applies the uaccess ACLs to
+    /dev/i2c-*; OpenRGB scans I2C only once, so it would miss DRAM and GPU controllers."""
+    deadline = time.monotonic() + timeout
+    pending = _pending_i2c_buses()
+    if pending:
+        log.info("Waiting for access to %s...", " ".join(sorted(pending)))
+    while pending and time.monotonic() < deadline:
+        time.sleep(interval)
+        pending = _pending_i2c_buses()
+    if pending:
+        log.warning("No access to %s; I2C devices (RAM, GPU) may not be detected",
+                    " ".join(sorted(pending)))
+
+
 def start_server(port, command=None):
     """Start `openrgb --server`; returns the Popen or None."""
     if command:
@@ -58,6 +90,7 @@ def start_server(port, command=None):
     # 1.0+: don't make the headless server try to connect to other servers
     if _supports(argv, env, "--noautoconnect"):
         args.append("--noautoconnect")
+    wait_for_i2c_access()
     log.info("Starting OpenRGB server: %s", " ".join(args))
     return subprocess.Popen(args, env={**os.environ, **env},
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,

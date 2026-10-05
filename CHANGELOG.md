@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1 — 2026-10-05
+
+- Fix RAM and graphics card lighting not detected after boot: wait for the login session's I2C access before starting the OpenRGB server, since OpenRGB scans I2C only once
+
 ## 0.1.0 — 2026-10-05
 
 First public release.
