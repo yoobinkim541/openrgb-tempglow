@@ -40,7 +40,8 @@ KO = {
     "Restart service": "서비스 다시 시작",
     "Reset to defaults": "기본값으로 되돌리기",
     "Reset to defaults?": "기본값으로 되돌릴까요?",
-    "Lighting, alert and device settings will all be reset.": "조명, 경고, 장치 설정이 모두 초기화돼요.",
+    "Lighting, schedule, alert and device settings will all be reset.":
+        "조명, 예약, 경고, 장치 설정이 모두 초기화돼요.",
     "Cancel": "취소",
     "Reset": "되돌리기",
     "Settings reset": "기본값으로 되돌렸어요",
@@ -52,6 +53,33 @@ KO = {
     "Lighting zones appear here once the service connects to OpenRGB.":
         "서비스가 OpenRGB에 연결되면 조명 구역이 여기에 나타나요.",
     "About": "정보",
+    "Schedule": "예약",
+    "Schedules": "예약",
+    "During each time window the selected parts change. Where schedules overlap, the lower one wins. "
+    "Overheat alerts still show.":
+        "정해 둔 시간 동안 선택한 부품의 조명이 바뀌어요. 예약 시간이 겹치면 아래쪽 예약이 우선이고, "
+        "과열 경고는 그대로 표시돼요.",
+    "Add schedule": "예약 추가",
+    "No schedules yet": "아직 예약이 없어요",
+    "Press + to turn lights off, dim them or change their color at set times":
+        "+를 눌러 정한 시간에 조명을 끄거나, 어둡게 하거나, 색을 바꿀 수 있어요",
+    "Name": "이름",
+    "End": "끝",
+    "Days": "요일",
+    "Mo": "월", "Tu": "화", "We": "수", "Th": "목", "Fr": "금", "Sa": "토", "Su": "일",
+    "Action": "동작",
+    "Turn off": "끄기",
+    "Dim": "어둡게",
+    "Custom lighting": "다른 조명으로",
+    "% of usual": "평소 대비 %",
+    "Delete schedule": "예약 삭제",
+    "Schedule {n}": "예약 {n}",
+    "Every day": "매일",
+    "Weekdays": "평일",
+    "Weekends": "주말",
+    "No days": "요일 없음",
+    "No parts": "부품 없음",
+    "Active now": "지금 적용 중",
 }
 
 _TABLES = {"ko": KO}

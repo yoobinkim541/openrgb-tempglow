@@ -5,9 +5,11 @@ import os
 import signal
 import sys
 import time
+from datetime import datetime
 
 from . import __version__, config
 from .effects import compute_color
+from .schedule import active_rules, effective_parts
 from .sensors import Overheat, Sensors
 
 log = logging.getLogger("tempglowd")
@@ -66,6 +68,7 @@ class Daemon:
             "temps": {"cpu": self.temps[0], "gpu": self.temps[1]},
             "sensors": self.sensors.describe(),
             "overheat": self.overheat.active,
+            "schedules_active": active_rules(self.cfg["schedules"], datetime.now()),
         })
 
     # ---------- connection ----------
@@ -119,12 +122,13 @@ class Daemon:
 
     def colors(self, t):
         oh = self.cfg["overheat"]
+        parts = effective_parts(self.cfg, datetime.now())
         out = {}
         for part in config.PARTS:
             if self.overheat.active and oh["enabled"] and part in oh["parts"]:
                 out[part] = config.hex_to_rgb(oh["color"])
             else:
-                out[part] = compute_color(self.cfg["parts"][part], t)
+                out[part] = compute_color(parts[part], t)
         return out
 
     def run(self):

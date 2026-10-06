@@ -25,7 +25,7 @@ fans, red when overheating" means juggling devices, zones and profiles. Tempglow
 Each part gets its own effect (**static**, **breathing**, **rainbow**, **off**), color, brightness and
 speed — or change everything at once. A small background service applies your settings and watches
 CPU/GPU temperatures; past the limit, the parts you choose switch to an alert color, and switch back
-once things cool down.
+once things cool down. Schedules can turn parts off, dim them or change their lighting at set times.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/yoobinkim541/openrgb-tempglow/main/docs/screenshot-lighting.png" width="32%" alt="Lighting tab">
@@ -36,6 +36,8 @@ once things cool down.
 ## Features
 
 - Per-part and all-at-once lighting control, applied live as you drag a slider
+- Schedules: during a daily time window, turn chosen parts off, dim them or switch them to another
+  effect and color (weekday selection, windows may cross midnight)
 - Overheat alert with hysteresis (CPU via `k10temp`/`zenpower`/`coretemp`, GPU via `nvidia-smi` or discrete `amdgpu`)
 - Automatic device discovery; assign any OpenRGB zone to a part and set ARGB LED counts in the **Devices** tab
 - Starts an OpenRGB server for you (installed package, Flatpak or AppImage) when none is running

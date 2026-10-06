@@ -6,8 +6,9 @@ import copy
 import subprocess
 import sys
 import time
+from datetime import datetime
 
-from . import APP_ID, SERVICE_NAME, __version__, config
+from . import APP_ID, SERVICE_NAME, __version__, config, schedule
 from .i18n import _
 
 PART_LABELS = {
@@ -18,6 +19,8 @@ PART_LABELS = {
 }
 EFFECT_LABELS = {"static": "Static", "breathing": "Breathing", "rainbow": "Rainbow", "off": "Off"}
 ASSIGN_CHOICES = list(config.PARTS) + [config.NONE]
+ACTION_LABELS = {"off": "Turn off", "dim": "Dim", "lighting": "Custom lighting"}
+WEEKDAYS = ("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
 SAVE_DELAY_MS = 80
 STATUS_POLL_S = 2
 HEARTBEAT_STALE_S = 15
@@ -42,10 +45,26 @@ def main(argv=None):
     def string_list(items):
         return Gtk.StringList.new([_(i) for i in items])
 
-    class PartControls:
-        """Effect / color / brightness / speed rows. Calls on_change(values) when edited."""
+    def scale_row(title, on_change, value=None, lo=0, hi=100):
+        scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, lo, hi, 1)
+        if value is not None:
+            scale.set_value(value)  # before connecting, so building the row doesn't save
+        scale.set_hexpand(True)
+        scale.set_size_request(160, -1)
+        scale.set_draw_value(True)
+        scale.set_value_pos(Gtk.PositionType.RIGHT)
+        scale.connect("value-changed", on_change)
+        row = Adw.ActionRow(title=title)
+        row.add_suffix(scale)
+        return scale, row
 
-        def __init__(self, group, values, on_change):
+    class PartControls:
+        """Effect / color / brightness / speed rows. Calls on_change(values) when edited.
+
+        `add` places each row, e.g. a PreferencesGroup's add or an ExpanderRow's add_row.
+        """
+
+        def __init__(self, add, values, on_change):
             self.values = values
             self.on_change = on_change
             self._updating = False
@@ -53,7 +72,7 @@ def main(argv=None):
             self.effect = Adw.ComboRow(title=_("Effect"),
                                        model=string_list(EFFECT_LABELS[e] for e in config.EFFECTS))
             self.effect.connect("notify::selected", self._changed)
-            group.add(self.effect)
+            add(self.effect)
 
             self.color = Gtk.ColorDialogButton(dialog=Gtk.ColorDialog(with_alpha=False),
                                                valign=Gtk.Align.CENTER)
@@ -61,24 +80,14 @@ def main(argv=None):
             self.color_row = Adw.ActionRow(title=_("Color"))
             self.color_row.add_suffix(self.color)
             self.color_row.set_activatable_widget(self.color)
-            group.add(self.color_row)
+            add(self.color_row)
 
-            self.brightness, self.brightness_row = self._scale_row(_("Brightness"))
-            group.add(self.brightness_row)
-            self.speed, self.speed_row = self._scale_row(_("Speed"))
-            group.add(self.speed_row)
+            self.brightness, self.brightness_row = scale_row(_("Brightness"), self._changed)
+            add(self.brightness_row)
+            self.speed, self.speed_row = scale_row(_("Speed"), self._changed)
+            add(self.speed_row)
+            self.rows = (self.effect, self.color_row, self.brightness_row, self.speed_row)
             self.set_values(values)
-
-        def _scale_row(self, title):
-            scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
-            scale.set_hexpand(True)
-            scale.set_size_request(240, -1)
-            scale.set_draw_value(True)
-            scale.set_value_pos(Gtk.PositionType.RIGHT)
-            scale.connect("value-changed", self._changed)
-            row = Adw.ActionRow(title=title)
-            row.add_suffix(scale)
-            return scale, row
 
         def set_values(self, values):
             self._updating = True
@@ -149,6 +158,11 @@ def main(argv=None):
             self.devices_bin = Adw.Bin()
             self.stack.add_titled_with_icon(self.devices_bin, "devices", _("Devices"),
                                             "computer-symbolic")
+            # Rebuilt when schedules are added or removed
+            self.schedule_bin = Adw.Bin()
+            self.rebuild_schedule_page()
+            self.stack.add_titled_with_icon(self.schedule_bin, "schedule", _("Schedule"),
+                                            "alarm-symbolic")
             self.alerts_page = self._build_alerts_page()
             self.stack.add_titled_with_icon(self.alerts_page, "alerts", _("Alerts"),
                                             "dialog-warning-symbolic")
@@ -174,14 +188,14 @@ def main(argv=None):
             page = Adw.PreferencesPage()
             group = Adw.PreferencesGroup(title=_("All parts"),
                                          description=_("Changes here apply to every part at once"))
-            self.all_controls = PartControls(group, dict(self.cfg["parts"]["case"]), self.on_all_change)
+            self.all_controls = PartControls(group.add, dict(self.cfg["parts"]["case"]), self.on_all_change)
             page.add(group)
 
             self.part_groups, self.part_controls = {}, {}
             for part in config.PARTS:
                 group = Adw.PreferencesGroup(title=_(PART_LABELS[part]))
                 self.part_controls[part] = PartControls(
-                    group, self.cfg["parts"][part], lambda v, p=part: self.on_part_change(p, v))
+                    group.add, self.cfg["parts"][part], lambda v, p=part: self.on_part_change(p, v))
                 self.part_groups[part] = group
                 page.add(group)
             return page
@@ -195,6 +209,186 @@ def main(argv=None):
         def on_part_change(self, part, values):
             self.cfg["parts"][part] = values
             self.schedule_save()
+
+        # ---------- schedule ----------
+        def rebuild_schedule_page(self, expand=None):
+            page = Adw.PreferencesPage()
+            group = Adw.PreferencesGroup(
+                title=_("Schedules"),
+                description=_("During each time window the selected parts change. Where schedules "
+                              "overlap, the lower one wins. Overheat alerts still show."))
+            add = Gtk.Button(icon_name="list-add-symbolic", tooltip_text=_("Add schedule"),
+                             valign=Gtk.Align.CENTER, css_classes=["flat"])
+            add.connect("clicked", self.on_add_schedule)
+            group.set_header_suffix(add)
+            page.add(group)
+
+            self.schedule_rows = []
+            if not self.cfg["schedules"]:
+                group.add(Adw.ActionRow(title=_("No schedules yet"),
+                                        subtitle=_("Press + to turn lights off, dim them or change "
+                                                   "their color at set times")))
+            for i, rule in enumerate(self.cfg["schedules"]):
+                group.add(self._build_schedule_row(i, rule, expanded=(i == expand)))
+            self.update_schedule_rows()
+            self.schedule_bin.set_child(page)
+
+        def _build_schedule_row(self, index, rule, expanded):
+            exp = Adw.ExpanderRow(expanded=expanded)
+            switch = Gtk.Switch(active=rule["enabled"], valign=Gtk.Align.CENTER,
+                                tooltip_text=_("Enabled"))
+            switch.connect("notify::active", lambda w, _p: self.set_rule(rule, "enabled", w.get_active()))
+            exp.add_suffix(switch)
+
+            name = Adw.EntryRow(title=_("Name"), text=rule["name"])
+            name.connect("changed", lambda w: self.set_rule(rule, "name", w.get_text()))
+            exp.add_row(name)
+            exp.add_row(self._time_row(_("Start"), rule, "start"))
+            exp.add_row(self._time_row(_("End"), rule, "end"))
+            exp.add_row(self._days_row(rule))
+
+            for part in config.PARTS:
+                sw = Adw.SwitchRow(title=_(PART_LABELS[part]), active=part in rule["parts"])
+                sw.connect("notify::active", self.on_rule_part, rule, part)
+                exp.add_row(sw)
+
+            action = Adw.ComboRow(title=_("Action"),
+                                  model=string_list(ACTION_LABELS[a] for a in schedule.ACTIONS))
+            action.set_selected(schedule.ACTIONS.index(rule["action"])
+                                if rule["action"] in schedule.ACTIONS else 0)
+            exp.add_row(action)
+
+            _dim, dim_row = scale_row(_("Brightness"),
+                                      lambda w: self.set_rule(rule, "dim", int(w.get_value())),
+                                      value=rule["dim"])
+            dim_row.set_subtitle(_("% of usual"))
+            exp.add_row(dim_row)
+            lighting = PartControls(exp.add_row, rule["lighting"],
+                                    lambda v: self.set_rule(rule, "lighting", v))
+
+            def show_action_rows(*_args):
+                a = schedule.ACTIONS[action.get_selected()]
+                dim_row.set_visible(a == "dim")
+                for row in lighting.rows:
+                    row.set_visible(a == "lighting")
+
+            def on_action(*_args):
+                show_action_rows()
+                self.set_rule(rule, "action", schedule.ACTIONS[action.get_selected()])
+
+            action.connect("notify::selected", on_action)
+            show_action_rows()
+
+            delete = Gtk.Button(icon_name="user-trash-symbolic", valign=Gtk.Align.CENTER,
+                                tooltip_text=_("Delete schedule"), css_classes=["flat", "error"])
+            delete.connect("clicked", lambda *_a: self.on_delete_schedule(index))
+            delete_row = Adw.ActionRow(title=_("Delete schedule"))
+            delete_row.add_suffix(delete)
+            delete_row.set_activatable_widget(delete)
+            exp.add_row(delete_row)
+
+            self.schedule_rows.append((exp, rule))
+            return exp
+
+        def _time_row(self, title, rule, key):
+            try:
+                h, m = divmod(schedule.parse_hhmm(rule[key]), 60)
+            except (ValueError, AttributeError):
+                h, m = 0, 0
+            row = Adw.ActionRow(title=title)
+            box = Gtk.Box(spacing=6, valign=Gtk.Align.CENTER, margin_top=6, margin_bottom=6)
+            spins = []
+            for value, hi in ((h, 23), (m, 59)):
+                spin = Gtk.SpinButton.new_with_range(0, hi, 1)
+                spin.set_orientation(Gtk.Orientation.VERTICAL)  # compact, like GNOME Clocks
+                spin.set_wrap(True)
+                spin.set_numeric(True)
+                spin.set_value(value)
+                spin.connect("output", self._pad_spin)
+                spins.append(spin)
+            box.append(spins[0])
+            box.append(Gtk.Label(label=":"))
+            box.append(spins[1])
+
+            def changed(*_args):
+                hh, mm = (int(s.get_value()) for s in spins)
+                self.set_rule(rule, key, f"{hh:02d}:{mm:02d}")
+
+            for spin in spins:
+                spin.connect("value-changed", changed)
+            row.add_suffix(box)
+            return row
+
+        @staticmethod
+        def _pad_spin(spin):
+            spin.set_text(f"{int(spin.get_value()):02d}")
+            return True
+
+        def _days_row(self, rule):
+            # No title: seven day buttons plus a label don't fit on narrow windows
+            box = Gtk.Box(spacing=4, halign=Gtk.Align.CENTER, margin_top=8, margin_bottom=8,
+                          tooltip_text=_("Days"))
+            for day, label in enumerate(WEEKDAYS):
+                btn = Gtk.ToggleButton(label=_(label), active=day in rule["days"],
+                                       css_classes=["circular", "day-toggle"])
+                btn.connect("toggled", self.on_rule_day, rule, day)
+                box.append(btn)
+            return Adw.PreferencesRow(child=box, activatable=False, title=_("Days"))
+
+        def set_rule(self, rule, key, value):
+            rule[key] = value
+            self.update_schedule_rows()
+            self.schedule_save()
+
+        def on_rule_part(self, sw, _pspec, rule, part):
+            parts = set(rule["parts"])
+            (parts.add if sw.get_active() else parts.discard)(part)
+            self.set_rule(rule, "parts", [p for p in config.PARTS if p in parts])
+
+        def on_rule_day(self, btn, rule, day):
+            days = set(rule["days"])
+            (days.add if btn.get_active() else days.discard)(day)
+            self.set_rule(rule, "days", sorted(days))
+
+        def on_add_schedule(self, *_args):
+            self.cfg["schedules"].append(schedule.new_rule())
+            self.schedule_save()
+            self.rebuild_schedule_page(expand=len(self.cfg["schedules"]) - 1)
+
+        def on_delete_schedule(self, index):
+            del self.cfg["schedules"][index]
+            self.schedule_save()
+            self.rebuild_schedule_page()
+
+        def update_schedule_rows(self):
+            active = set(schedule.active_rules(self.cfg["schedules"], datetime.now()))
+            for i, (exp, rule) in enumerate(self.schedule_rows):
+                exp.set_title(GLib.markup_escape_text(rule["name"].strip())
+                              or _("Schedule {n}").format(n=i + 1))
+                exp.set_subtitle(self.describe_rule(rule, i in active))
+
+        @staticmethod
+        def describe_rule(rule, active):
+            days = rule["days"]
+            if len(days) == 7:
+                when = _("Every day")
+            elif days == [0, 1, 2, 3, 4]:
+                when = _("Weekdays")
+            elif days == [5, 6]:
+                when = _("Weekends")
+            elif not days:
+                when = _("No days")
+            else:
+                when = " ".join(_(WEEKDAYS[d]) for d in days)
+            parts = (_("All parts") if len(rule["parts"]) == len(config.PARTS) else
+                     ", ".join(_(PART_LABELS[p]) for p in rule["parts"]) or _("No parts"))
+            action = _(ACTION_LABELS.get(rule["action"], rule["action"]))
+            if rule["action"] == "dim":
+                action += f" {rule['dim']}%"
+            text = f"{rule['start']}–{rule['end']} · {when} · {action} · {parts}"
+            if active:
+                text += " · " + _("Active now")
+            return GLib.markup_escape_text(text)
 
         # ---------- alerts ----------
         def _build_alerts_page(self):
@@ -330,6 +524,8 @@ def main(argv=None):
                 group.set_description(None if present.get(part, not alive) else
                                       _("No lights assigned to this part yet (see Devices)"))
 
+            self.update_schedule_rows()
+
             temps = st.get("temps", {})
             for row, val in ((self.cpu_temp_row, temps.get("cpu")), (self.gpu_temp_row, temps.get("gpu"))):
                 row.set_subtitle(f"{val:.0f} °C" if alive and val is not None else _("not available"))
@@ -343,7 +539,7 @@ def main(argv=None):
         # ---------- reset / about ----------
         def on_reset(self, *_args):
             dialog = Adw.AlertDialog(heading=_("Reset to defaults?"),
-                                     body=_("Lighting, alert and device settings will all be reset."))
+                                     body=_("Lighting, schedule, alert and device settings will all be reset."))
             dialog.add_response("cancel", _("Cancel"))
             dialog.add_response("reset", _("Reset"))
             dialog.set_response_appearance("reset", Adw.ResponseAppearance.DESTRUCTIVE)
@@ -379,6 +575,15 @@ def main(argv=None):
         def __init__(self):
             super().__init__(application_id=APP_ID)
             self.win = None
+
+        def do_startup(self):
+            Adw.Application.do_startup(self)
+            css = Gtk.CssProvider()
+            css.load_from_string(
+                ".day-toggle { min-width: 30px; min-height: 30px; padding: 0; }"
+                ".day-toggle:checked { background: @accent_bg_color; color: @accent_fg_color; }")
+            Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css,
+                                                      Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
         def do_activate(self):
             Gtk.Window.set_default_icon_name(APP_ID)

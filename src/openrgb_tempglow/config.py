@@ -40,6 +40,8 @@ DEFAULT = {
         "hysteresis": 10,
         "parts": ["fans"],
     },
+    # Timed rules (see schedule.py); later rules win where they overlap
+    "schedules": [],
     # "<device>::<zone>" -> part name or "none". Zones missing here use the type-based default.
     "assignments": {},
     # "<device>::<zone>" -> LED count for resizable (addressable) zones
@@ -74,7 +76,12 @@ def load(path=None):
             data = json.load(f)
     except (OSError, ValueError):
         return copy.deepcopy(DEFAULT)
-    return merge(DEFAULT, data)
+    if not isinstance(data, dict):
+        return copy.deepcopy(DEFAULT)
+    cfg = merge(DEFAULT, data)
+    from .schedule import normalize  # schedule imports PARTS from here
+    cfg["schedules"] = normalize(cfg["schedules"])
+    return cfg
 
 
 def atomic_write_json(path, data):
